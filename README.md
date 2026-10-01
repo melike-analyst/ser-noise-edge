@@ -1,3 +1,4 @@
+
 **Speech Emotion Recognition (SER) under noise, from training to edge deployment.**
 
 Most SER tutorials stop at "accuracy on a clean test set". This project asks the
@@ -310,3 +311,4 @@ models/           (optional) exported ONNX files, needed only for the ARM64 work
 ## License
 
 Code: MIT (see `LICENSE`). Datasets keep their own licenses.
+
