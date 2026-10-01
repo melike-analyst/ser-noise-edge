@@ -24,26 +24,21 @@ reproduced with the commands in this README.
 | Experiment | Status |
 |---|---|
 | MFCC + SVM baseline, clean and noisy test | done |
-| CNN without noise augmentation, **clean** test | done |
-| CNN with noise augmentation, clean test | done |
-| CNN with noise augmentation, INT8 ONNX, clean + noisy test | done |
+| CNN **without** noise augmentation, clean and noisy test | done |
+| CNN **with** noise augmentation, clean and noisy test (ONNX FP32 and INT8) | done |
 | ONNX FP32 / INT8 export, parity check | done |
 | Latency / memory benchmark on an x86-64 laptop | done |
-| CNN **without** augmentation under noise | not run yet |
-| ONNX FP32 under noise (accuracy cost of INT8 across all conditions) | not run yet |
-| CRNN (CNN + GRU) | not run yet |
 | Real noise recordings (`--noise_dir`) | not run yet |
+| CRNN (CNN + GRU) | not run yet |
+| Several random seeds, longer training | not run yet |
 | Benchmark on an ARM64 device | **not done**: no ARM64 hardware was available (see [Benchmarking on ARM64](#benchmarking-on-arm64-not-done-here-how-to-do-it)) |
-| Several random seeds | not run yet |
-
-Because of the gaps above, some questions can only be partly answered. The Findings section
-says exactly which claims the data supports and which it does not.
 
 ## Results
 
 Setup: RAVDESS speech, 8 emotions, **speaker-independent** split (actors 1-16 train,
 17-20 validation, 21-24 test = 240 test clips). One training run per model (seed 42),
 30 epochs. Chance level is UAR = 0.125. UAR = unweighted average recall (mean of per-class recall).
+The noisy test clips are generated with fixed seeds, so every model sees identical inputs.
 
 **How much to trust the numbers.** With 240 test clips from only 4 speakers, a UAR value has a
 95% uncertainty of roughly +/- 0.06 (a rough estimate that treats clips as independent, so the
@@ -55,42 +50,49 @@ not be read as real effects.
 | Model | Noise aug. | UAR | Macro-F1 | Accuracy | Best val UAR |
 |---|---|---|---|---|---|
 | MFCC + SVM | no | 0.348 | 0.351 | 0.346 | - |
-| CNN (98k parameters, PyTorch) | no | 0.422 | 0.383 | 0.421 | 0.508 |
-| CNN (98k parameters, PyTorch) | yes | 0.441 | 0.362 | 0.438 | 0.426 |
+| CNN (98k parameters) | no | 0.422 | 0.383 | 0.421 | 0.508 |
+| CNN (98k parameters) | yes | 0.441 | 0.362 | 0.438 | 0.426 |
+| CNN, ONNX FP32 | yes | 0.441 | 0.362 | 0.438 | - |
 | CNN, ONNX INT8 | yes | 0.438 | 0.360 | 0.433 | - |
 
-Sources: `runs/cnn/metrics.json`, `runs/cnn_aug/metrics.json`,
-`results/robustness_svm_mfcc.csv`, `results/robustness_cnn_aug_onnx_int8.csv`.
+Sources: `runs/*/metrics.json`, `results/robustness_*.csv`.
 
 ### 2. Robustness to noise
 
-UAR at selected SNRs (dB). Each cell is **CNN with noise augmentation (INT8) / MFCC + SVM**.
-Clean test: CNN 0.438, SVM 0.348.
+![Robustness to noise](results/robustness.png)
+
+UAR at selected SNRs (dB). Each cell: **CNN without aug. / CNN with aug. (ONNX FP32) / MFCC + SVM**.
+Clean test: 0.422 / 0.441 / 0.348.
 
 | Noise | 20 dB | 10 dB | 0 dB | -5 dB |
 |---|---|---|---|---|
-| white | 0.473 / 0.191 | 0.445 / 0.129 | 0.371 / 0.129 | 0.312 / 0.125 |
-| pink | 0.480 / 0.234 | 0.477 / 0.172 | 0.375 / 0.160 | 0.332 / 0.129 |
-| brown | 0.461 / 0.293 | 0.469 / 0.277 | 0.461 / 0.281 | 0.461 / 0.223 |
-| cabin (synthetic) | 0.449 / 0.254 | 0.445 / 0.266 | 0.430 / 0.148 | 0.430 / 0.145 |
+| white | 0.152 / 0.465 / 0.191 | 0.125 / 0.449 / 0.129 | 0.125 / 0.355 / 0.129 | 0.125 / 0.324 / 0.125 |
+| pink | 0.160 / 0.473 / 0.234 | 0.129 / 0.465 / 0.172 | 0.125 / 0.371 / 0.160 | 0.125 / 0.324 / 0.129 |
+| brown | 0.391 / 0.480 / 0.293 | 0.367 / 0.492 / 0.277 | 0.270 / 0.473 / 0.281 | 0.242 / 0.469 / 0.223 |
+| cabin (synthetic) | 0.336 / 0.465 / 0.254 | 0.281 / 0.438 / 0.266 | 0.152 / 0.430 / 0.148 | 0.133 / 0.441 / 0.145 |
 
-![Robustness to noise](results/robustness.png)
+Mean UAR over all 24 noisy conditions (4 noise types x 6 SNR levels):
+CNN without aug. **0.21**, MFCC + SVM **0.20**, CNN with aug. **0.44** (FP32) / **0.44** (INT8).
+The augmented CNN scores higher than the non-augmented one in all 24 conditions, by 0.09 to 0.34.
 
-### 3. Which emotions are confused
+### 3. Which emotions are confused (clean test)
 
-![Confusion matrix of the INT8 model on the clean test set](results/confusion_cnn_aug_onnx_int8.png)
+| CNN without noise aug. | CNN with noise aug. (ONNX FP32) |
+|---|---|
+| ![](results/confusion_cnn_torch.png) | ![](results/confusion_cnn_aug_onnx_fp32.png) |
 
-Per-class recall (diagonal): surprised 0.91, calm 0.84, angry 0.69, neutral 0.50, disgust 0.41,
-happy 0.09, fearful 0.06, **sad 0.00**. The model never predicts "sad". Typical confusions are
-sad -> calm (0.47), disgust -> angry (0.53), happy -> angry / surprised (0.38 / 0.31), and
-fearful -> angry (0.31).
+Per-class recall, without aug. -> with aug.: surprised 0.59 -> 0.94, calm 0.78 -> 0.84,
+angry 0.72 -> 0.66, neutral 0.44 -> 0.50, disgust 0.38 -> 0.41, happy 0.25 -> 0.12,
+fearful 0.19 -> 0.06, **sad 0.03 -> 0.00**. Neither model really predicts "sad". Frequent confusions in both:
+sad -> calm (about 0.5), disgust -> angry (0.5-0.6), happy -> angry / surprised; fearful is spread over several classes (angry, disgust, happy).
+(The INT8 model's matrix is in `results/confusion_cnn_aug_onnx_int8.png` and is very close to the FP32 one.)
 
 ### 4. Size, speed and memory (x86-64 laptop, 1 thread, 3 s clip, 200 runs)
 
-| Model | Size (MB) | Features p50 (ms) | Model p50 (ms) | Total p50 / p95 (ms) | RTF | Peak RAM (MB) |
-|---|---|---|---|---|---|---|
-| CNN FP32 | 0.396 | 2.22 | 1.18 | 3.40 / 3.77 | 0.0011 | 66.5 |
-| CNN INT8 | 0.111 | 2.52 | 1.65 | 4.17 / 4.62 | 0.0014 | 68.2 |
+| Model | Size (MB) | Features p50 (ms) | Model p50 (ms) | Total p50 / p95 (ms) | RTF | Peak RAM (MB) | Clean UAR |
+|---|---|---|---|---|---|---|---|
+| CNN FP32 | 0.396 | 2.22 | 1.18 | 3.40 / 3.77 | 0.0011 | 66.5 | 0.441 |
+| CNN INT8 | 0.111 | 2.52 | 1.65 | 4.17 / 4.62 | 0.0014 | 68.2 | 0.438 |
 
 Machine: Intel CPU (`Intel64 Family 6 Model 141`), Windows (which reports x86-64 as "AMD64"),
 Python 3.11.5, ONNX Runtime 1.30.0. Source: `results/benchmark_laptop.csv`.
@@ -98,91 +100,86 @@ RTF = real-time factor = latency / audio duration (below 1 is faster than real t
 
 ![Accuracy vs latency](results/tradeoff.png)
 
-(The trade-off plot has a single point because only the INT8 model was evaluated on the test set.
-Evaluating the FP32 model adds the second point.)
-
 ## Findings
 
 **Supported by the data**
 
-- **Noise destroys the classical baseline.** MFCC + SVM, trained on clean audio only, falls from
-  0.348 to about chance (0.13-0.14) at 15 dB or lower white noise, and stays low for pink noise.
-  Differences this large are well outside the uncertainty.
-- **The noise-trained CNN degrades gracefully.** It keeps UAR 0.31-0.37 at 0 to -5 dB white noise,
-  where the SVM is at chance. How much of this is due to the architecture and how much to
-  noise augmentation cannot be separated yet (see Limitations).
-- **Damage depends on the noise spectrum.** The ordering is white (-0.125 from clean to -5 dB),
-  pink (-0.105), then cabin and brown (about 0 change). A plausible explanation is that white noise
-  spreads energy over all frequencies and masks the mid/high mel bands, while brown and the
-  synthetic cabin noise put most energy at very low frequencies, below where most emotion cues
-  are. This explanation was not tested directly.
-- **INT8 shrinks the model 3.6x and costs about one clip of accuracy** on the clean test set
-  (105 vs 104 of 240 correct, FP32 PyTorch vs INT8 ONNX). Parity check torch vs ONNX FP32:
-  max output difference 2.9e-06 (`runs/cnn_aug/export_report.json`).
-- **INT8 was slower here, not faster.** Model time +40% (1.18 -> 1.65 ms), total time +23%, and
-  peak RAM about the same (+1.7 MB). Dynamic quantization adds quantize/dequantize work at run
-  time, and on this laptop CPU that cost outweighs the integer arithmetic gain. This is a
-  measurement on one machine; an ARM64 device may behave differently, which is why the
-  benchmark must be repeated on the target hardware.
-- **Feature extraction costs more than the model.** NumPy log-mel takes 60-65% of total time.
-  If latency ever mattered, that is the first thing to optimize, not the network.
-- **Both pipelines are far faster than real time on this laptop** (roughly 700-900x), so latency
-  is not the bottleneck here. Peak RAM (about 66-68 MB) is dominated by the Python/ONNX Runtime
-  process, not by the 0.4 MB model.
-- **Errors fall between emotions with similar energy** (sad/calm, happy/fearful/surprised/angry).
-  This is typical for SER and suggests the model captures how energetic the speech is more than
-  its finer emotional character.
+- **Noise augmentation is what makes the CNN robust.** Without it, the CNN is as fragile as the classical
+  baseline (mean UAR over noisy conditions 0.21 vs 0.20 for the SVM) and drops to chance (about 0.125) already at
+  10 dB white or pink noise. With it, UAR stays around 0.32-0.37 even at 0 to -5 dB white/pink noise and
+  0.43-0.49 for brown and cabin noise. The gaps (0.09-0.34 in all 24 conditions) are larger than the
+  uncertainty of a single measurement. This also settles the earlier confound: the robustness of the CNN comes from
+  the augmentation, not from the architecture alone.
+- **On clean audio the CNN beats the baseline** (UAR 0.42-0.44 vs 0.35), a modest but likely real gap.
+- **Damage depends on the noise spectrum.** White and pink noise are the most harmful. Brown and the synthetic
+  cabin noise are much less harmful, even for the CNN without augmentation (mean UAR 0.33 for brown, 0.24 for cabin,
+  vs 0.13 for white and pink). A plausible explanation is that white noise spreads energy over all frequencies and masks the
+  mid/high mel bands, while brown and cabin noise put most of their energy at very low frequencies, below where most
+  emotion cues are. This explanation was not tested directly.
+- **INT8 costs no measurable accuracy and makes the file 3.6x smaller.** Clean UAR 0.438 (INT8) vs 0.441 (FP32),
+  about 1 clip of 240. Across all 24 noisy conditions the INT8-minus-FP32 difference averages -0.003 and stays
+  between -0.023 and +0.016, i.e. no systematic loss. ONNX FP32 reproduces the PyTorch result exactly (UAR 0.441;
+  max output difference 2.9e-06).
+- **INT8 was slower, not faster, on this laptop.** Model time +40% (1.18 -> 1.65 ms), total time +23%,
+  peak RAM about the same (+1.7 MB). Dynamic quantization adds quantize/dequantize work at run time, and on this CPU that
+  cost outweighs the integer arithmetic gain. In the accuracy-vs-latency plot the FP32 model is therefore at least as good
+  on both axes; INT8 wins only on **file size** (relevant for storage or over-the-air updates). This is one machine; another
+  CPU, especially an ARM64 one, may behave differently, which is why the benchmark needs to be repeated on the
+  target hardware.
+- **Feature extraction costs more than the model.** NumPy log-mel takes 60-65% of total time. If latency ever
+  mattered, that is the first thing to optimize, not the network.
+- **Both pipelines are far faster than real time on this laptop** (roughly 700-900x). Peak RAM (about 66-68 MB) is
+  dominated by the Python/ONNX Runtime process, not by the 0.4 MB model.
+- **Errors fall between emotions with similar energy** (sad/calm, happy/fearful/surprised/angry), typical for SER.
+  Neither model really predicts "sad" (recall 0.00-0.03), so this is not an augmentation artifact.
 
 **Not supported yet (do not claim these)**
 
-- *"Noise augmentation improves accuracy."* Clean UAR is 0.422 without and 0.441 with augmentation,
-  a difference of about 5 clips, inside the uncertainty, and macro-F1 goes the other way
-  (0.383 vs 0.362). The decisive comparison, the CNN **without** augmentation under noise, has
-  not been run.
-- *"CNN is more robust than SVM because of the architecture."* The SVM never saw noise during
-  training, the CNN did. This compares "trained with noise" against "trained without".
-- *"Noise sometimes improves accuracy."* Some noisy conditions score above clean (for example
-  pink 20 dB: 0.480 vs 0.438). These gaps are within the uncertainty. They may come from the
-  augmentation acting as regularization, or from chance.
-- *"The model generalizes to unseen noise."* The evaluation noise types (white, pink, brown, cabin)
-  are the same types used in augmentation. No real recordings were tested.
+- *"Noise augmentation improves clean accuracy."* UAR 0.422 vs 0.441 is a difference of about 5 clips, inside the
+  uncertainty, and macro-F1 goes the other way (0.383 vs 0.362). The per-class pattern also changes (surprised, calm
+  better; happy, fearful worse). The data shows no clear clean-accuracy cost of augmentation, but also no clear gain.
+- *"The model generalizes to real-world noise."* The test noise types (white, pink, brown, cabin) are generated by the
+  same code as the training augmentation, so these results are for **noise types seen in training**. Real recordings
+  were not tested.
+- *"Noisy audio is easier than clean audio for the augmented model."* Several noisy conditions score above clean
+  (for example brown noise at every SNR: 0.46-0.49 vs 0.44). Each gap is within the uncertainty, and the FP32 and INT8
+  results are the same model, so they are not independent confirmations. A possible reason is that half of the training
+  clips were noisy, which makes moderately noisy audio closer to the training data. This was not tested.
 - *"It would work in a car."* RAVDESS is acted studio speech, and "cabin" is synthetic noise.
 
 ## Limitations of this study
 
 - Single training run, single seed, small test set (240 clips, 4 speakers). The validation UAR
   jumps by 0.1 or more between epochs (`runs/*/history.csv`), and the best-epoch choice on a
-  small validation set is itself noisy. For example CNN scores 0.508 on validation but 0.422
-  on test.
+  small validation set is itself noisy. For example the CNN without augmentation scores 0.508 on validation but 0.422
+  on test, so the clean-test ranking of the two CNNs could change with another seed or split.
 - Training had not converged: the loss was still decreasing at epoch 30 and validation UAR was
   still rising for the CNN without augmentation. Longer training or a larger model would
   probably score higher. The absolute scores (UAR about 0.44) are modest for RAVDESS.
-- The model never predicts "sad" (recall 0.00). This should be investigated (more epochs,
+- Almost no "sad" predictions (recall 0.00-0.03). This should be investigated (more epochs,
   other seeds, class weighting, a larger model) before trusting per-class conclusions.
 - Acted English speech by 24 North American actors, recorded in a studio. Results will not
   transfer directly to spontaneous speech, other languages or real in-car audio.
-- "cabin" noise is a synthetic approximation, not a recording.
+- "cabin" noise is a synthetic approximation, not a recording, and the evaluation noise types equal the training
+  noise types.
 - SNR is computed over the whole 3 s clip, including any zero padding.
-- Latency was measured on one x86-64 laptop with one thread. **There is no ARM64 measurement** because no ARM64 hardware was available, so statements about edge devices are limited to what this laptop shows. INT8 in particular may behave differently on ARM64.
+- Latency was measured on one x86-64 laptop with one thread. **There is no ARM64 measurement** because no ARM64
+  hardware was available, so statements about edge devices are limited to what this laptop shows. INT8 in particular
+  may behave differently on ARM64.
 
 ## Next steps
 
-Run the missing experiments first, since they answer the open questions above:
+The open questions, in order of value:
 
 ```bash
-# 1) the key comparison: CNN without noise augmentation, under noise
-python -m ser.evaluate --data_root data/ravdess --run runs/cnn --variant torch
-
-# 2) FP32 under noise (accuracy cost of INT8 over all conditions) and the 2nd point of the trade-off plot
-python -m ser.evaluate --data_root data/ravdess --run runs/cnn_aug --variant torch
-python -m ser.evaluate --data_root data/ravdess --run runs/cnn_aug --variant onnx_fp32
-
-# 3) test on noise the model has not seen in training
-python -m ser.evaluate --data_root data/ravdess --run runs/cnn_aug --variant torch --noise_dir path/to/noise_wavs
+# 1) noise the model has NOT seen in training (download e.g. ESC-50 / DEMAND / MUSAN, check the license)
+python -m ser.evaluate --data_root data/ravdess --run runs/cnn_aug --variant onnx_fp32 --noise_dir path/to/noise_wavs
+python -m ser.evaluate --data_root data/ravdess --run runs/cnn     --variant torch     --noise_dir path/to/noise_wavs
 python -m ser.baseline --data_root data/ravdess --noise_dir path/to/noise_wavs
 
-# 4) other seeds and longer training
+# 2) other seeds and longer training (to check the clean-accuracy comparison and the "sad" problem)
 python -m ser.train --data_root data/ravdess --model cnn --aug_noise --epochs 60 --seed 1 --out runs/cnn_aug_s1
+python -m ser.train --data_root data/ravdess --model cnn            --epochs 60 --seed 1 --out runs/cnn_s1
 
 python -m ser.plots
 ```
