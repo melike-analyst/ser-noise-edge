@@ -42,6 +42,9 @@ def plot_robustness(results_dir: Path):
     print("saved", results_dir / "robustness.png")
 
 
+ARCH_LABEL = {"AMD64": "x86-64", "x86_64": "x86-64", "arm64": "ARM64", "aarch64": "ARM64"}
+
+
 def plot_tradeoff(results_dir: Path):
     bench_files = sorted(results_dir.glob("benchmark_*.csv"))
     rob_files = sorted(results_dir.glob("robustness_*.csv"))
@@ -54,13 +57,18 @@ def plot_tradeoff(results_dir: Path):
     df = bench.merge(clean, on="model")
     fig, ax = plt.subplots(figsize=(5.5, 4))
     for machine, g in df.groupby("machine"):
-        ax.scatter(g.total_ms_p50, g.uar, label=f"{machine} ({g.arch.iloc[0]})")
+        arch = ARCH_LABEL.get(g.arch.iloc[0], g.arch.iloc[0])   # Windows reports x86-64 as "AMD64"
+        ax.scatter(g.total_ms_p50, g.uar, label=f"{machine} ({arch})")
         for _, r in g.iterrows():
             ax.annotate(r.model, (r.total_ms_p50, r.uar), fontsize=6, xytext=(3, 3), textcoords="offset points")
+    # Fixed y-range: an auto-zoomed axis makes a 0.004 UAR difference look dramatic.
+    ax.set_ylim(0, 0.6)
+    ax.axhline(1 / 8, color="gray", ls=":", lw=1)
+    ax.text(ax.get_xlim()[1], 1 / 8, " chance", va="center", fontsize=6, color="gray")
     ax.set_xlabel("latency per 3 s clip, p50 (ms)  [features + model]")
     ax.set_ylabel("clean test UAR")
     ax.grid(alpha=0.3)
-    ax.legend(fontsize=7)
+    ax.legend(fontsize=7, loc="upper left")
     fig.tight_layout()
     fig.savefig(results_dir / "tradeoff.png", dpi=150)
     print("saved", results_dir / "tradeoff.png")
