@@ -1,0 +1,3 @@
+machine,model,size_mb,feature_ms_p50,model_ms_p50,total_ms_p50,total_ms_p95,rtf,peak_rss_mb,runs,warmup,threads,arch,cpu,ort_version,python
+laptop,cnn_aug/onnx_fp32,0.396052,2.2162499953992665,1.1841499945148826,3.397549968212843,3.773485030978918,0.0011325166560709476,66.453504,200,20,1,AMD64,"Intel64 Family 6 Model 141 Stepping 1, GenuineIntel",1.30.0,3.11.5
+laptop,cnn_aug/onnx_int8,0.110904,2.5156499759759754,1.6543000238016248,4.173799999989569,4.617350050830282,0.0013912666666631897,68.182016,200,20,1,AMD64,"Intel64 Family 6 Model 141 Stepping 1, GenuineIntel",1.30.0,3.11.5

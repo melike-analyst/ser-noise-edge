@@ -1,0 +1,24 @@
+{
+  "fp32_mb": 0.396052,
+  "int8_mb": 0.110904,
+  "max_abs_diff_torch_vs_onnx": 2.86102294921875e-06,
+  "ops_fp32": {
+    "Conv": 4,
+    "Relu": 4,
+    "MaxPool": 4,
+    "ReduceMean": 1,
+    "Gemm": 1
+  },
+  "ops_int8": {
+    "DynamicQuantizeLinear": 5,
+    "Reshape": 4,
+    "Mul": 10,
+    "ConvInteger": 4,
+    "Cast": 5,
+    "Add": 5,
+    "Relu": 4,
+    "MaxPool": 4,
+    "ReduceMean": 1,
+    "MatMulInteger": 1
+  }
+}

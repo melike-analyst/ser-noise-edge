@@ -1,0 +1,185 @@
+Metadata-Version: 2.4
+Name: ser-noise-edge
+Version: 0.1.0
+Summary: Speech emotion recognition: noise robustness and edge (ONNX / INT8) benchmarking
+License: MIT
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Dynamic: license-file
+
+# ser-noise-edge
+
+**Speech Emotion Recognition (SER) under noise, from training to edge deployment.**
+
+Most SER tutorials stop at "accuracy on a clean test set". This project asks the
+questions that matter when a model has to run for real, for example on a device in a car:
+
+1. How much does accuracy drop when the audio is noisy?
+2. Does training with noise augmentation fix it?
+3. After converting to **ONNX** and quantizing to **INT8**, how much accuracy do we lose,
+   and how much do we gain in model size and speed?
+4. Does it run in real time on a small **ARM64** device?
+
+Everything is reproducible with a few commands, and every number in this README comes from
+a CSV file in `results/`.
+
+```
+ wav -> trim/pad 3 s -> [+ noise at chosen SNR] -> log-mel (NumPy) -> model -> emotion
+                                                      |
+            train / evaluate (PyTorch)    export -> ONNX FP32 -> INT8 -> benchmark (ONNX Runtime)
+```
+
+## What is inside
+
+| Part | What it does |
+|---|---|
+| Data | RAVDESS speech (8 emotions), **speaker-independent** split by actor |
+| Features | Log-mel spectrogram written in plain NumPy (no torchaudio needed at inference) |
+| Models | MFCC + SVM baseline, small CNN, CNN + bidirectional GRU (CRNN), all in PyTorch |
+| Noise | White, pink, brown, synthetic "cabin" noise, and optional real noise files, mixed at exact SNR levels |
+| Metrics | UAR (unweighted average recall), macro-F1, accuracy, confusion matrix |
+| Export | PyTorch -> ONNX (with numerical parity check) -> dynamic INT8 quantization |
+| Benchmark | Latency p50/p95, real-time factor, peak memory, model size; saved with CPU/architecture info |
+| Tests | `pytest`, including an end-to-end run on synthetic data |
+
+## Quickstart
+
+```bash
+python -m venv .venv && source .venv/bin/activate      # Windows: .venv\Scripts\activate
+pip install -r requirements.txt
+pip install -e .
+
+make test      # unit tests + end-to-end smoke test (~1-2 min on CPU)
+make demo      # tiny synthetic dataset, checks the whole pipeline, no download needed
+```
+
+The synthetic demo only proves that the code runs. **Its scores mean nothing about real speech.**
+
+### Run on real data (RAVDESS)
+
+1. Download `Audio_Speech_Actors_01-24.zip` from the RAVDESS page on Zenodo
+   (https://zenodo.org/records/1188976) and unzip it into `data/ravdess/`.
+   The dataset is licensed **CC BY-NC-SA 4.0** (non-commercial, share-alike, attribution).
+   Do not commit the audio to your repository.
+2. Run everything:
+
+```bash
+make experiments DATA=data/ravdess EPOCHS=30 TAG=laptop
+```
+
+Or step by step:
+
+```bash
+python -m ser.baseline  --data_root data/ravdess                               # MFCC + SVM reference
+python -m ser.train     --data_root data/ravdess --model cnn --out runs/cnn    # clean training
+python -m ser.train     --data_root data/ravdess --model cnn --out runs/cnn_aug --aug_noise
+python -m ser.export_onnx --run runs/cnn_aug                                   # ONNX + INT8
+python -m ser.evaluate  --data_root data/ravdess --run runs/cnn_aug --variant onnx_int8
+python -m ser.benchmark --models runs/cnn_aug/model.onnx runs/cnn_aug/model.int8.onnx --tag laptop
+python -m ser.plots
+```
+
+Use **real noise** (recommended): download a noise set such as ESC-50, DEMAND or MUSAN,
+check its license, and add `--noise_dir path/to/noise_wavs` to `ser.evaluate` / `ser.baseline`.
+Results then include a `real` noise type next to the synthetic ones.
+
+### Benchmark on an ARM64 device
+
+Copy the repo and the `runs/*/model*.onnx` files to the device (for example a Raspberry Pi 4/5),
+install `numpy scipy soundfile pandas onnxruntime` (PyTorch is **not** needed for inference), then run:
+
+```bash
+python -m ser.benchmark --models runs/cnn_aug/model.onnx runs/cnn_aug/model.int8.onnx --tag rpi5 --threads 1
+```
+
+Copy `results/benchmark_rpi5.csv` back and run `python -m ser.plots` to compare machines.
+Emulating ARM64 with Docker/QEMU is fine for checking that the code runs, but **not** for timing.
+
+## Results
+
+> Fill this section with **your own** numbers after running the experiments. Keep the tables
+> tied to the CSV files in `results/` so every claim can be checked.
+
+**Clean test set** (speaker-independent, actors 21-24, 240 clips):
+
+| Model | Noise aug. | UAR | Macro-F1 |
+|---|---|---|---|
+| MFCC + SVM | no | _TBD_ | _TBD_ |
+| CNN | no | _TBD_ | _TBD_ |
+| CNN | yes | _TBD_ | _TBD_ |
+| CRNN | yes | _TBD_ | _TBD_ |
+
+**Robustness** (`results/robustness.png`): UAR against SNR for each noise type.
+
+**Edge** (`results/tradeoff.png`, `results/benchmark_*.csv`):
+
+| Model | Machine | Size (MB) | Latency p50 (ms) | RTF | Peak RAM (MB) | UAR |
+|---|---|---|---|---|---|---|
+| cnn_aug / FP32 | _TBD_ | _TBD_ | _TBD_ | _TBD_ | _TBD_ | _TBD_ |
+| cnn_aug / INT8 | _TBD_ | _TBD_ | _TBD_ | _TBD_ | _TBD_ | _TBD_ |
+
+**Things worth discussing once you have numbers**
+
+- Which emotion pairs get confused, and do they get worse with noise?
+- Does noise augmentation help on noise types it never saw (e.g. `real` noise)?
+- INT8 is not automatically faster. Dynamic quantization adds work at run time, and recurrent (GRU)
+  layers are not quantized by this method, so the CRNN may shrink very little. Check the op list in
+  `runs/<name>/export_report.json` and compare latency on the target hardware, not only on a laptop.
+
+## Design decisions (and why)
+
+- **Split by actor, not by file.** Clips of the same speaker in train and test leak voice identity
+  and inflate scores. Actors 1-16 train, 17-20 validation, 21-24 test (gender-balanced).
+- **UAR as the main metric.** Class sizes are not equal (RAVDESS has fewer "neutral" clips), and UAR
+  is not dominated by the biggest class.
+- **Model selection on validation only.** The test set is used once per model.
+- **Same noisy test clips for every model.** Noise is generated with fixed seeds, so FP32, INT8 and
+  the baseline are compared on identical inputs.
+- **Features in NumPy.** One implementation for training and deployment, and no PyTorch in the
+  inference process, which keeps memory measurements honest.
+- **Each benchmark in its own process.** Peak memory of one model is not affected by the others.
+- **A baseline first.** A neural network is only interesting if it beats MFCC + SVM.
+
+## Limitations
+
+- RAVDESS is **acted** speech by 24 North American actors, in English, recorded in a studio.
+  Results will not transfer directly to spontaneous speech, other languages, or real in-car audio.
+- The `cabin` noise is a **synthetic approximation**, not a real recording. Use `--noise_dir`
+  with real noise for claims about real environments.
+- SNR is computed over the whole 3 s clip (including any zero padding).
+- Only categorical emotions are predicted. Arousal/valence regression is listed below as future work.
+- With 24 speakers, results vary with the actor split and the random seed. Report several seeds
+  if you want to claim small differences.
+
+## Ideas for extension
+
+- Pre-trained speech encoders (wav2vec 2.0, WavLM, emotion2vec, or the Whisper encoder) as feature
+  extractors, compared on the same noise sweep and edge benchmark.
+- Arousal / valence regression with CCC as the metric (needs a dataset such as MSP-Podcast; check its access terms).
+- Static INT8 quantization with calibration data, or FP16, and compare to dynamic INT8.
+- Cross-corpus test (train on RAVDESS, test on CREMA-D or a Turkish emotional speech corpus).
+- Multiple seeds with confidence intervals.
+
+## Project structure
+
+```
+src/ser/
+  data.py         RAVDESS parsing, actor split, loading
+  features.py     log-mel and MFCC statistics (NumPy)
+  noise.py        noise types + exact-SNR mixing
+  models.py       SmallCNN, CRNN
+  train.py        training (optional noise augmentation)
+  baseline.py     MFCC + SVM with the same noise sweep
+  evaluate.py     clean + noisy evaluation for torch / onnx_fp32 / onnx_int8
+  export_onnx.py  ONNX export, parity check, INT8 quantization
+  benchmark.py    latency / RTF / memory / size on the current machine
+  plots.py        robustness and trade-off figures
+  synthetic.py    tiny fake dataset for smoke tests
+tests/            pytest (unit + end-to-end)
+results/          CSVs and figures produced by the experiments
+```
+
+## License
+
+Code: MIT (see `LICENSE`). Datasets keep their own licenses.

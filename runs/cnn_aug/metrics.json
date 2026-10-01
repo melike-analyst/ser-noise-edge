@@ -1,0 +1,6 @@
+{
+  "test_uar": 0.44140625,
+  "test_macro_f1": 0.3622631443918608,
+  "test_accuracy": 0.4375,
+  "best_val_uar": 0.42578125
+}

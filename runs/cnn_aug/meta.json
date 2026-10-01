@@ -1,0 +1,19 @@
+{
+  "model": "cnn",
+  "classes": [
+    "neutral",
+    "calm",
+    "happy",
+    "sad",
+    "angry",
+    "fearful",
+    "disgust",
+    "surprised"
+  ],
+  "sr": 16000,
+  "duration": 3.0,
+  "n_mels": 64,
+  "n_params": 98424,
+  "noise_aug": true,
+  "seed": 42
+}
